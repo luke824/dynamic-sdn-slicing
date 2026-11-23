@@ -1,4 +1,4 @@
-# Dynamic and Resource-Aware SDN Network Slicing
+# Dynamic SDN Network Slicing
 
 **Project overview**
 

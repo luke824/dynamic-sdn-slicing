@@ -42,25 +42,27 @@ class NetworkSlicingTopo(Topo):
             self.addHost("h%d" % (i + 1), **host_config)
 
         # Add switch links
-        self.addLink("s1", "s2", **config1)
-        self.addLink("s1", "s4", **config1)
-        self.addLink("s1", "s5", **config1)
-        self.addLink("s2", "s3", **config2)
-        self.addLink("s3", "s4", **config2)
-        self.addLink("s3", "s5", **config2)
+        #defining the ports, for better understanding, it can removed
+        self.addLink("s1", "s2", port1=1, port2=1, **config1) 
+        self.addLink("s1", "s4", port1=2, port2=1, **config1)
+        self.addLink("s1", "s5", port1=3, port2=1, **config1)
+
+        self.addLink("s3", "s2", port1=1, port2=2, **config2)
+        self.addLink("s3", "s4", port1=2, port2=2, **config2)
+        self.addLink("s3", "s5", port1=3, port2=2, **config2)
 
         # Add host links
-        self.addLink("h1", "s1", **host_link_config)
+        self.addLink("h1", "s1", port1=0, port2=4, **host_link_config)
 
-        self.addLink("h2", "s2", **host_link_config)
-        self.addLink("h3", "s2", **host_link_config)
+        self.addLink("h2", "s2", port1=0, port2=3, **host_link_config)
+        self.addLink("h3", "s2", port1=0, port2=4, **host_link_config)
 
-        self.addLink("h4", "s3", **host_link_config)
+        self.addLink("h4", "s3", port1=0, port2=4, **host_link_config)
 
-        self.addLink("h5", "s4", **host_link_config)
-        self.addLink("h6", "s4", **host_link_config)
+        self.addLink("h5", "s4", port1=0, port2=3, **host_link_config)
+        self.addLink("h6", "s4", port1=0, port2=4, **host_link_config)
 
-        self.addLink("h7", "s5", **host_link_config)
+        self.addLink("h7", "s5", port1=0, port2=3, **host_link_config)
 
 
 topos = {"networkslicingtopo": (lambda: NetworkSlicingTopo())}

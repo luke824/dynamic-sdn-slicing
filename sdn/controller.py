@@ -11,13 +11,21 @@ class TrafficSlicing(app_manager.RyuApp):
     def __init__(self, *args, **kwargs):
         super(TrafficSlicing, self).__init__(*args, **kwargs)
 
+        #this is not used right now, but we can use it later for the adding of slices
+        self.ports = {
+            1: {"s2": 1, "s4": 2, "s5": 3, "h1": 4}, #s1
+            2: {"s1": 1, "s3": 2, "h2": 3, "h3": 4}, #s2
+            3: {"s2": 1, "s4": 2, "s5": 3, "h4": 4}, #s3
+            4: {"s1": 1, "s3": 2, "h5": 3, "h6": 4}, #s4
+            5: {"s1": 1, "s3": 2, "h7": 3}, #s5
+        }
+
+        #first slice h1 - s1  - s5 -  h7 
         self.slice_to_port = {
-                        1: {"s2": 1, "s4": 2, "s5": 3, "h1": 4}, #s1
-                        2: {"s1": 1, "s3": 2, "h2": 3, "h3": 4}, #s2
-                        3: {"s2": 1, "s4": 2, "s5": 3, "h4": 4}, #s3
-                        4: {"s1": 1, "s3": 2, "h5": 3, "h6": 4}, #s4
-                        5: {"s1": 1, "s3": 2, "h7": 3}, #s5
-                    }
+            1: {4: 3, 3: 4},
+            5: {1: 3, 3: 1}
+        }
+
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -65,4 +73,12 @@ class TrafficSlicing(app_manager.RyuApp):
         in_port = msg.match["in_port"]
         dpid = datapath.id
         
-        self.logger.info("Switch: %s, Input port: %s", dpid, in_port)# just log the package now, there is no rule now, so everything will  end up here and will be logged and then droped
+        self.logger.info("Switch: %s, Input port: %s", dpid, in_port)
+
+        #basic topology slicing
+        out_port = self.slice_to_port[dpid][in_port]# which port should the packtet go out
+        actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]# send the package
+        match = datapath.ofproto_parser.OFPMatch(in_port=in_port)# for all packets
+
+        self.add_flow(datapath, 1, match, actions)
+        self._send_package(msg, datapath, in_port, actions)

@@ -3,7 +3,13 @@ from ryu.controller import ofp_event
 from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_3
-
+from ryu.lib.packet import packet
+from ryu.lib.packet import ethernet
+from ryu.lib.packet import ether_types
+from ryu.lib.packet import udp
+from ryu.lib.packet import tcp
+from ryu.lib.packet import icmp
+from slice import Slice
 
 class TrafficSlicing(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
@@ -22,19 +28,39 @@ class TrafficSlicing(app_manager.RyuApp):
 
         #slice1: h1 - s1 - s5 - h7 
         #slice2: h2 - s2 - s3 - s4 - h6
+        #slice3: h3 - s2 - s3 - h4 (uses some ports as slice2)
         #for test: pingall
-        self.slice_to_port = {
-            "slice1": {
-                1: {4: 3, 3: 4},
-                5: {1: 3, 3: 1}
-            },
-            "slice2": {
-                2: {3: 2, 2: 3},
-                3: {1: 2, 2: 1},
-                4: {2: 4, 4: 2}
-            }
-        }
 
+        slice1 = Slice(
+            "slice1",  
+            {   1: {4: 3, 3: 4},
+                5: {1: 3, 3: 1}},
+            {"00:00:00:00:00:01", "00:00:00:00:00:07"},
+            True
+        )
+
+        slice2 = Slice(
+            "slice2",  
+            {   2: {3: 2, 2: 3},
+                3: {1: 2, 2: 1},
+                4: {2: 4, 4: 2}},
+            {"00:00:00:00:00:02", "00:00:00:00:00:06"},
+            True
+        )
+
+        slice3 = Slice(
+            "slice3",  
+            {   2: {4: 2, 2: 4},
+                3: {1: 4, 4: 1}},
+            {"00:00:00:00:00:03", "00:00:00:00:00:04"},
+            True
+        )
+        
+        self.slices = {
+            "slice1": slice1,
+            "slice2": slice2,
+            "slice3": slice3
+        }
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -84,18 +110,35 @@ class TrafficSlicing(app_manager.RyuApp):
         
         self.logger.info("Switch: %s, Input port: %s", dpid, in_port)
 
-        for slc_ports in self.slice_to_port.values():
+        pkt = packet.Packet(msg.data)
+        eth = pkt.get_protocol(ethernet.ethernet)
 
-            if dpid not in slc_ports:
+        if eth.ethertype == ether_types.ETH_TYPE_LLDP: # ignore lldp packet
+            return
+
+        src = eth.src
+        dst = eth.dst
+
+        for sl in self.slices.values():
+
+            if not sl.active:  #skip inactive slices
                 continue
 
-            if in_port not in slc_ports[dpid]:
+            if dpid not in sl.ports:  #is the switch in to the slice
                 continue
 
-            #basic topology slicing
-            out_port = slc_ports[dpid][in_port]# which port should the packtet go out
-            actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]# send the package
-            match = datapath.ofproto_parser.OFPMatch(in_port=in_port)# for all packets
+            if in_port not in sl.ports[dpid]:  # is the input port of the switch in the slice
+                continue
 
-            self.add_flow(datapath, 1, match, actions)
-            self._send_package(msg, datapath, in_port, actions)
+            if src in sl.macs and dst in sl.macs:
+                #basic topology slicing
+                out_port = sl.ports[dpid][in_port]# which port should the packtet go out
+                actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]# send the package
+                match = datapath.ofproto_parser.OFPMatch(#switch rule
+                    in_port=in_port,
+                    eth_src=src,
+                    eth_dst=dst #Distinguish flows using the same links and hosts
+                )
+
+                self.add_flow(datapath, 1, match, actions)
+                self._send_package(msg, datapath, in_port, actions)

@@ -20,10 +20,19 @@ class TrafficSlicing(app_manager.RyuApp):
             5: {"s1": 1, "s3": 2, "h7": 3}, #s5
         }
 
-        #first slice h1 - s1  - s5 -  h7 
+        #slice1: h1 - s1 - s5 - h7 
+        #slice2: h2 - s2 - s3 - s4 - h6
+        #for test: pingall
         self.slice_to_port = {
-            1: {4: 3, 3: 4},
-            5: {1: 3, 3: 1}
+            "slice1": {
+                1: {4: 3, 3: 4},
+                5: {1: 3, 3: 1}
+            },
+            "slice2": {
+                2: {3: 2, 2: 3},
+                3: {1: 2, 2: 1},
+                4: {2: 4, 4: 2}
+            }
         }
 
 
@@ -75,10 +84,18 @@ class TrafficSlicing(app_manager.RyuApp):
         
         self.logger.info("Switch: %s, Input port: %s", dpid, in_port)
 
-        #basic topology slicing
-        out_port = self.slice_to_port[dpid][in_port]# which port should the packtet go out
-        actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]# send the package
-        match = datapath.ofproto_parser.OFPMatch(in_port=in_port)# for all packets
+        for slc_ports in self.slice_to_port.values():
 
-        self.add_flow(datapath, 1, match, actions)
-        self._send_package(msg, datapath, in_port, actions)
+            if dpid not in slc_ports:
+                continue
+
+            if in_port not in slc_ports[dpid]:
+                continue
+
+            #basic topology slicing
+            out_port = slc_ports[dpid][in_port]# which port should the packtet go out
+            actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]# send the package
+            match = datapath.ofproto_parser.OFPMatch(in_port=in_port)# for all packets
+
+            self.add_flow(datapath, 1, match, actions)
+            self._send_package(msg, datapath, in_port, actions)

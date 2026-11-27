@@ -1,3 +1,5 @@
+import json
+
 from ryu.base import app_manager
 from ryu.controller import ofp_event
 from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
@@ -9,13 +11,26 @@ from ryu.lib.packet import ether_types
 from ryu.lib.packet import udp
 from ryu.lib.packet import tcp
 from ryu.lib.packet import icmp
+from ryu.app.wsgi import ControllerBase
+from ryu.app.wsgi import Response
+from ryu.app.wsgi import route
+from ryu.app.wsgi import WSGIApplication
+from ryu.lib import dpid as dpid_lib
 from slice import Slice
+
+simple_switch_instance_name = 'simple_switch_api_app'
+
 
 class TrafficSlicing(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 
+    _CONTEXTS = {'wsgi': WSGIApplication}# restAPI config, wsgi is used for the http
+
     def __init__(self, *args, **kwargs):
         super(TrafficSlicing, self).__init__(*args, **kwargs)
+
+        wsgi = kwargs['wsgi']
+        wsgi.register(Controller, {simple_switch_instance_name: self})
 
         #this is not used right now, but we can use it later for the adding of slices
         self.ports = {
@@ -142,3 +157,38 @@ class TrafficSlicing(app_manager.RyuApp):
 
                 self.add_flow(datapath, 1, match, actions)
                 self._send_package(msg, datapath, in_port, actions)
+
+
+
+url = '/controller/slice/'
+class Controller(ControllerBase):
+
+    def __init__(self, req, link, data, **config):
+        super(Controller, self).__init__(req, link, data, **config)
+        self.simple_switch_app = data[simple_switch_instance_name]
+
+    #for test: curl -X PUT 'http://127.0.0.1:8080/controller/slice/slice2?active=true'
+    @route('slice_on_off', url + "{sliceName}", methods=['PUT'])
+    def sliceOnOff(self, req, **kwargs):
+
+        simple_switch = self.simple_switch_app
+        sliceName = kwargs['sliceName']
+        active = req.GET.get('active')
+        
+        if sliceName not in simple_switch.slices:
+            return Response(status=404)
+
+        if active == 'true':
+            active = True
+        elif active == 'false':
+            active = False
+        else:
+            return Response(status=400)
+
+        try:
+            sl = simple_switch.slices[sliceName]
+            sl.active = active
+            body = json.dumps({"name": sliceName, "active": sl.active})
+            return Response(content_type='application/json', body=body)
+        except Exception as e:
+            return Response(status=500)
